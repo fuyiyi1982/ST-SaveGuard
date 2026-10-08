@@ -17,7 +17,7 @@
 2. 在酒馆目录下运行：
 
    ```
-   node plugins.js install https://github.com/你的用户名/ST-SaveGuard
+   node plugins.js install https://github.com/fuyiyi1982/ST-SaveGuard
    ```
 
 3. 重启酒馆。控制台出现 `[SaveGuard] v1.0.0 watching …` 就是装好了。
