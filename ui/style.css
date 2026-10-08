@@ -1,0 +1,162 @@
+/* ST-SaveGuard */
+
+.sg-chip {
+    --sg-color: #3fb37f;
+    position: fixed;
+    top: calc(var(--topBarBlockSize, 40px) + 6px);
+    right: 8px;
+    z-index: 2999;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    height: 24px;
+    padding: 0 10px 0 8px;
+    border-radius: 12px;
+    border: 1px solid color-mix(in srgb, var(--sg-color) 55%, transparent);
+    background: color-mix(in srgb, var(--SmartThemeBlurTintColor, #222) 88%, var(--sg-color));
+    color: var(--SmartThemeBodyColor, #eee);
+    font-size: 12px;
+    line-height: 1;
+    white-space: nowrap;
+    cursor: pointer;
+    user-select: none;
+    opacity: 0.95;
+    transition: padding 0.25s ease, opacity 0.25s ease, border-color 0.25s ease;
+}
+
+.sg-chip-dot {
+    flex: none;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--sg-color);
+}
+
+.sg-chip-text {
+    max-width: 14em;
+    overflow: hidden;
+    transition: max-width 0.25s ease;
+}
+
+/* Once the "saved" message has been seen, shrink to a quiet dot. */
+.sg-chip.sg-collapsed {
+    padding: 0 7px;
+    gap: 0;
+    opacity: 0.6;
+}
+
+.sg-chip.sg-collapsed .sg-chip-text {
+    max-width: 0;
+}
+
+.sg-chip:hover {
+    opacity: 1;
+}
+
+.sg-chip[data-state="saving"],
+.sg-chip[data-state="pending"],
+.sg-chip[data-state="generating"] {
+    --sg-color: #e2a336;
+}
+
+.sg-chip[data-state="failed"] {
+    --sg-color: #e0524d;
+}
+
+.sg-chip[data-state="saving"] .sg-chip-dot,
+.sg-chip[data-state="failed"] .sg-chip-dot {
+    animation: sg-pulse 1s ease-in-out infinite;
+}
+
+@keyframes sg-pulse {
+    50% { opacity: 0.25; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .sg-chip, .sg-chip-text { transition: none; }
+    .sg-chip .sg-chip-dot { animation: none !important; }
+}
+
+.sg-panel {
+    text-align: left;
+}
+
+.sg-panel h3 {
+    margin: 0 0 10px;
+}
+
+.sg-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.sg-bar-status[data-state="saved"] { color: #3fb37f; }
+.sg-bar-status[data-state="failed"] { color: #e0524d; }
+.sg-bar-status:not([data-state="saved"]):not([data-state="failed"]) { color: #e2a336; }
+
+.sg-hint,
+.sg-note {
+    opacity: 0.7;
+    font-size: 0.9em;
+    margin: 6px 0 10px;
+}
+
+.sg-note {
+    padding: 14px 0;
+    text-align: center;
+}
+
+.sg-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 0;
+    border-top: 1px solid var(--SmartThemeBorderColor, #555);
+}
+
+.sg-row-main {
+    flex: 1;
+    min-width: 0;
+}
+
+.sg-row-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 8px;
+}
+
+.sg-floor {
+    opacity: 0.8;
+}
+
+.sg-tag {
+    font-size: 0.8em;
+    padding: 1px 6px;
+    border-radius: 8px;
+    border: 1px solid #e2a336;
+    color: #e2a336;
+}
+
+.sg-tag-shield {
+    border-color: #5b9bd5;
+    color: #5b9bd5;
+}
+
+.sg-preview {
+    opacity: 0.7;
+    font-size: 0.9em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.sg-panel .menu_button {
+    flex: none;
+    width: auto;
+    min-width: max-content;
+    margin: 0;
+    white-space: nowrap;
+}

@@ -1,0 +1,10 @@
+{
+    "name": "st-saveguard",
+    "version": "1.0.0",
+    "description": "SillyTavern server plugin + UI extension: rolling server-side chat snapshots, a save status indicator and a close guard.",
+    "main": "server/index.mjs",
+    "private": true,
+    "engines": {
+        "node": ">= 20"
+    }
+}

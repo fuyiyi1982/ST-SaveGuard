@@ -1,0 +1,7 @@
+{
+    "keep": 5,
+    "keepProtected": 2,
+    "protectDrop": 5,
+    "orphanDays": 30,
+    "installUi": true
+}

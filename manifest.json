@@ -1,0 +1,12 @@
+{
+    "display_name": "存档守卫 SaveGuard",
+    "loading_order": 5,
+    "requires": [],
+    "optional": [],
+    "js": "ui/index.js",
+    "css": "ui/style.css",
+    "author": "",
+    "version": "1.0.0",
+    "homePage": "",
+    "auto_update": true
+}
