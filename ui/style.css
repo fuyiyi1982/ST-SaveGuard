@@ -160,3 +160,19 @@
     margin: 0;
     white-space: nowrap;
 }
+
+.sg-section {
+    margin-top: 14px;
+    padding: 8px 0 6px;
+    border-top: 1px solid var(--SmartThemeBorderColor, #555);
+    font-weight: bold;
+    opacity: 0.85;
+}
+
+.sg-section + .sg-row {
+    border-top: none;
+}
+
+.sg-list > .menu_button {
+    display: inline-block;
+}

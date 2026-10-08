@@ -33,6 +33,7 @@ const cfg = {
 
 // <stamp>_<messages>_<flag>_<hash>.jsonl.gz
 // flag: a = round finished, u = last message is the user's (in progress), p = protected
+const DELETED_MARK = '.deleted';   // dropped into a chat's snapshot folder when the chat file disappears
 const SNAP_RE = /^(\d{8}-\d{6}-\d{3})_(\d+)_([aup])_([0-9a-f]{10})\.jsonl\.gz$/;
 
 const watchers = new Map();   // watched dir -> FSWatcher
@@ -196,17 +197,32 @@ async function snapshot(dir, buffer, { protect = false } = {}) {
     return prune(dir);
 }
 
+/** Remembers when a chat went missing; returns that time, or 0 if it has no snapshots. */
+async function markDeleted(dir) {
+    const mark = path.join(dir, DELETED_MARK);
+    try {
+        return (await fsp.stat(mark)).mtimeMs;
+    } catch {
+        if (!(await listSnaps(dir)).length) return 0;
+        await fsp.writeFile(mark, '');
+        return Date.now();
+    }
+}
+
 async function handleFile(target, file) {
+    const dir = snapDirFor(target, file);
+    if (!dir) return;
     let stat;
     try {
         stat = await fsp.stat(file);
     } catch {
-        return; // deleted or renamed away; its snapshots stay until the orphan purge
+        // Deleted or renamed away. Its snapshots stay, so the chat can still be brought back.
+        seen.delete(file);
+        return markDeleted(dir);
     }
     if (!stat.isFile()) return;
     seen.set(file, stat.mtimeMs);
-    const dir = snapDirFor(target, file);
-    if (!dir) return;
+    await fsp.rm(path.join(dir, DELETED_MARK), { force: true });
     await snapshot(dir, await fsp.readFile(file));
 }
 
@@ -304,7 +320,7 @@ function dropDeadWatchers() {
     }
 }
 
-/** Removes snapshot folders whose chat is gone and that have not changed for `orphanDays`. */
+/** Removes snapshot folders whose chat has been gone for `orphanDays`. */
 async function purgeOrphans() {
     const cutoff = Date.now() - cfg.orphanDays * 86400000;
     for (const target of listTargets()) {
@@ -325,9 +341,7 @@ async function purgeOrphans() {
                     continue;
                 }
                 if (fs.existsSync(path.join(target.root, `${relPath}.jsonl`))) continue;
-                const newest = (await listSnaps(full)).at(-1);
-                const mtime = newest ? (await fsp.stat(newest.file)).mtimeMs : 0;
-                if (mtime < cutoff) await fsp.rm(full, { recursive: true, force: true });
+                if (await markDeleted(full) < cutoff) await fsp.rm(full, { recursive: true, force: true });
             }
         }
         await visit(base, 1, '');
@@ -450,6 +464,29 @@ export async function init(router) {
         if (!chat) return response.status(400).send({ error: 'bad chat' });
         const snaps = await listSnaps(chat.dir);
         response.send({ snapshots: (await Promise.all(snaps.map(describe))).reverse() });
+    }));
+
+    // Chats of one character that no longer exist but still have snapshots.
+    router.post('/deleted', route(async (request, response) => {
+        const dirs = request.user?.directories;
+        const card = safeSegment(String(request.body?.avatar_url ?? '').replace(/\.png$/i, ''));
+        if (!dirs || !card) return response.status(400).send({ error: 'bad character' });
+        const base = path.join(dirs.backups, 'saveguard', 'chats', card);
+        let names = [];
+        try {
+            names = (await fsp.readdir(base, { withFileTypes: true })).filter(e => e.isDirectory()).map(e => e.name);
+        } catch {
+            // no snapshots for this character yet
+        }
+        const chats = [];
+        for (const name of names) {
+            if (fs.existsSync(path.join(dirs.chats, card, `${name}.jsonl`))) continue;
+            const dir = path.join(base, name);
+            const newest = (await listSnaps(dir)).at(-1);
+            if (!newest) continue;
+            chats.push({ file_name: name, deleted: await markDeleted(dir), latest: await describe(newest) });
+        }
+        response.send({ chats: chats.sort((a, b) => b.latest.time - a.latest.time) });
     }));
 
     router.post('/download', route(async (request, response) => {

@@ -197,13 +197,16 @@ function when(time) {
     return new Date(time).toLocaleString([], { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
 }
 
-async function restore(chat, snap) {
+/** Restores a snapshot. `deleted` means the chat file is gone and gets recreated, then opened. */
+async function restore(chat, snap, deleted = false) {
     const c = ctx();
     if (isGenerating()) {
         return void toastr.warning('回复还在生成，等它结束后再还原。', '存档守卫');
     }
     const confirmed = await c.callGenericPopup(
-        `把当前聊天还原到 ${when(snap.time)}（${snap.messages} 楼）？\n现在的内容会先留一份保护备份，之后还能再还原回来。`,
+        deleted
+            ? `找回已删除的聊天「${chat.file_name}」，恢复到 ${when(snap.time)}（${snap.messages} 楼）并切换过去？\n现在打开的聊天不会受影响。`
+            : `把当前聊天还原到 ${when(snap.time)}（${snap.messages} 楼）？\n现在的内容会先留一份保护备份，之后还能再还原回来。`,
         c.POPUP_TYPE.CONFIRM,
     );
     if (confirmed !== c.POPUP_RESULT.AFFIRMATIVE) return;
@@ -215,8 +218,9 @@ async function restore(chat, snap) {
     }
     try {
         await call('/restore', { ...chat, id: snap.id });
-        await c.reloadCurrentChat();
-        toastr.success(`已还原到 ${when(snap.time)}`, '存档守卫');
+        if (deleted) await c.openCharacterChat(chat.file_name);
+        else await c.reloadCurrentChat();
+        toastr.success(deleted ? `已找回「${chat.file_name}」` : `已还原到 ${when(snap.time)}`, '存档守卫');
     } catch (error) {
         console.error('[SaveGuard]', error);
         toastr.error('还原失败，聊天没有被改动。', '存档守卫');
@@ -237,9 +241,57 @@ async function download(chat, snap) {
     }
 }
 
-async function buildList(box, popup) {
+function snapRow(chat, snap, popup, deleted) {
+    const row = el('div', 'sg-row');
+    const main = el('div', 'sg-row-main');
+    const head = el('div', 'sg-row-head');
+    head.append(el('b', '', when(snap.time)), el('span', 'sg-floor', `${snap.messages} 楼`));
+    if (snap.state === 'pending') head.append(el('span', 'sg-tag', '回合进行中'));
+    if (snap.state === 'protected') head.append(el('span', 'sg-tag sg-tag-shield', '保护备份'));
+    main.append(head, el('div', 'sg-preview', snap.preview ? `${snap.name}：${snap.preview}` : '（空）'));
+
+    const restoreButton = el('div', 'menu_button', deleted ? '找回' : '还原');
+    restoreButton.addEventListener('click', async () => {
+        await popup.completeAffirmative();
+        await restore(chat, snap, deleted);
+    });
+    const downloadButton = el('div', 'menu_button', '下载');
+    downloadButton.title = '把这份存档下载成 .jsonl 文件';
+    downloadButton.addEventListener('click', () => download(chat, snap));
+    row.append(main, restoreButton, downloadButton);
+    return row;
+}
+
+/** Lists the chats of this character that were deleted but can still be brought back. */
+async function deletedSection(box, popup, chat) {
+    if (!chat.avatar_url) return [];
+    let chats = [];
+    try {
+        chats = (await (await call('/deleted', { avatar_url: chat.avatar_url })).json()).chats;
+    } catch {
+        return [];
+    }
+    if (!chats.length) return [];
+    const rows = chats.map(item => {
+        const row = el('div', 'sg-row');
+        const main = el('div', 'sg-row-main');
+        const head = el('div', 'sg-row-head');
+        head.append(el('b', '', item.file_name), el('span', 'sg-floor', `${item.latest.messages} 楼`));
+        main.append(head, el('div', 'sg-preview', `最后保存于 ${when(item.latest.time)}　${item.latest.name}：${item.latest.preview}`));
+        const open = el('div', 'menu_button', '查看');
+        open.addEventListener('click', () => buildList(box, popup, { avatar_url: chat.avatar_url, file_name: item.file_name }, true));
+        row.append(main, open);
+        return row;
+    });
+    return [el('div', 'sg-section', `已删除的聊天（${chats.length}）`), ...rows];
+}
+
+/**
+ * Fills the panel with the snapshots of one chat: the open one by default, or a deleted
+ * chat of the same character when the player picked one from the list underneath.
+ */
+async function buildList(box, popup, chat = currentChat(), deleted = false) {
     box.replaceChildren(el('div', 'sg-note', '读取中…'));
-    const chat = currentChat();
     if (!chat) return box.replaceChildren(el('div', 'sg-note', '先打开一个聊天。'));
 
     let snaps;
@@ -248,31 +300,17 @@ async function buildList(box, popup) {
     } catch {
         return box.replaceChildren(el('div', 'sg-note', '这个酒馆的服务器没有安装存档守卫的服务端插件，所以没有可恢复的备份。保存状态提示和关闭提醒仍然有效。'));
     }
-    if (!snaps.length) {
-        return box.replaceChildren(el('div', 'sg-note', '这个聊天还没有备份。再玩一回合就会有第一份。'));
+
+    const nodes = [];
+    if (deleted) {
+        const back = el('div', 'menu_button', '← 返回当前聊天');
+        back.addEventListener('click', () => buildList(box, popup));
+        nodes.push(back, el('div', 'sg-section', `已删除的聊天：${chat.file_name}`));
     }
-
-    const rows = snaps.map(snap => {
-        const row = el('div', 'sg-row');
-        const main = el('div', 'sg-row-main');
-        const head = el('div', 'sg-row-head');
-        head.append(el('b', '', when(snap.time)), el('span', 'sg-floor', `${snap.messages} 楼`));
-        if (snap.state === 'pending') head.append(el('span', 'sg-tag', '回合进行中'));
-        if (snap.state === 'protected') head.append(el('span', 'sg-tag sg-tag-shield', '保护备份'));
-        main.append(head, el('div', 'sg-preview', snap.preview ? `${snap.name}：${snap.preview}` : '（空）'));
-
-        const restoreButton = el('div', 'menu_button', '还原');
-        restoreButton.addEventListener('click', async () => {
-            await popup.completeAffirmative();
-            await restore(chat, snap);
-        });
-        const downloadButton = el('div', 'menu_button fa-solid fa-download');
-        downloadButton.title = '下载这份存档';
-        downloadButton.addEventListener('click', () => download(chat, snap));
-        row.append(main, restoreButton, downloadButton);
-        return row;
-    });
-    box.replaceChildren(...rows);
+    if (snaps.length) nodes.push(...snaps.map(snap => snapRow(chat, snap, popup, deleted)));
+    else nodes.push(el('div', 'sg-note', '这个聊天还没有备份。再玩一回合就会有第一份。'));
+    if (!deleted) nodes.push(...await deletedSection(box, popup, chat));
+    box.replaceChildren(...nodes);
 }
 
 async function openPanel() {
@@ -283,11 +321,15 @@ async function openPanel() {
     const bar = el('div', 'sg-bar');
     const line = el('span', 'sg-bar-status');
     const saveNow = el('div', 'menu_button', '立即保存');
-    saveNow.addEventListener('click', () => ctx().saveChat());
+    saveNow.addEventListener('click', async () => {
+        await ctx().saveChat();
+        // The server copies the file a moment after the save lands; then show the result.
+        setTimeout(() => buildList(list, popup), 1500);
+    });
     bar.append(line, saveNow);
 
     const list = el('div', 'sg-list');
-    root.append(bar, el('div', 'sg-hint', '每回合自动在服务器上留一份，只保留最近几回合。还原不会丢掉现在的内容。'), list);
+    root.append(bar, el('div', 'sg-hint', '每回合自动在服务器上留一份，只保留最近几回合。还原不会丢掉现在的内容。误删的聊天 30 天内可以在下面找回。'), list);
 
     const mirror = () => {
         line.textContent = chipText.textContent;
